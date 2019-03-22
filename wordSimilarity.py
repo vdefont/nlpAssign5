@@ -1,70 +1,93 @@
 import math
 import sys
+import heapq
 
 # TODO:
 # 1. Fix PMI to handle 0 case
 # 2. Encapsulate makeStopList() and processSentences() into class called WordSimilarity
 
-# Maps (wordA, wordB) -> val
-# Ignores the ordering of the pair
-class PairCounter:
+class PairMap:
 
-    map = {}
+    def __init__(self):
+        self.map = {}
 
-    def __init__(self, words = []):
-        # Create empty map
-        for word in words:
-            self.map[word] = {}
-
-    def ensureKey(self, word):
+    def __ensureKey(self, word):
         if word not in self.map:
             self.map[word] = {}
 
-    # Returns sorted pair: (small, large)
-    def sortPair(self, eltA, eltB):
-        if eltA < eltB:
-            return eltA, eltB
-        return eltB, eltA
-
-    def increment(self, wordA, wordB):
-        wordA, wordB = self.sortPair(wordA, wordB)
-        self.ensureKey(wordA)
-        # Ensure key
-        if wordB not in self.map[wordA]:
-            self.map[wordA][wordB] = 0
-        # Increment
-        self.map[wordA][wordB] += 1
-
     def put(self, wordA, wordB, val):
-        wordA, wordB = self.sortPair(wordA, wordB)
-        self.ensureKey(wordA)
+        self.__ensureKey(wordA)
         self.map[wordA][wordB] = val
 
     # Returns 0 if not found
     def get(self, wordA, wordB):
-        wordA, wordB = self.sortPair(wordA, wordB)
-        self.ensureKey(wordA)
+        self.__ensureKey(wordA)
         if wordB not in self.map[wordA]:
             return 0
         return self.map[wordA][wordB]
 
-stoplist = {}
 
+# Maps (wordA, wordB) -> val
+# Ignores the ordering of the pair
+class PairCounter(PairMap):
+
+    def __init__(self, words = []):
+        # Create empty map
+        self.map = {}
+        for word in words:
+            self.map[word] = {}
+
+    # Returns sorted pair: (small, large)
+    def __sortPair(self, eltA, eltB):
+        if eltA < eltB:
+            return eltA, eltB
+        return eltB, eltA
+
+    def put(self, wordA, wordB, val):
+        wordA, wordB = self.__sortPair(wordA, wordB)
+        PairMap.put(self, wordA, wordB, val)
+
+    def get(self, wordA, wordB):
+        wordA, wordB = self.__sortPair(wordA, wordB)
+        return PairMap.get(self, wordA, wordB)
+
+    def increment(self, wordA, wordB):
+        cur = self.get(wordA, wordB)
+        self.put(wordA, wordB, cur + 1)
+
+# Returns stoplist as set {wordA: 1, wordB: 1, ...}
 def makeStoplist(stoplistFile):
+
+    stoplist = {}
+
     file = open(stoplistFile, 'r')
     for line in file:
 
         # Remove newline character
         line = line[:-1]
 
-        stoplist[line] = 1
+        stoplist[line.lower()] = 1
+    file.close()
+
+    return stoplist
+
+# 1. Remove words with non-alphabetic chars
+# 2. Lowercase all
+# 3. Remove words from stoplist
+def processWords(words, stoplist):
+    newWords = []
+    for word in words:
+        if word.isalpha():
+            word = word.lower()
+            if word not in stoplist:
+                newWords.append(word)
+    return newWords
 
 # Returns:
-# - pairCount (PairCounter: pair -> int)
-# - docFreq (map: word -> int)
-# - invDocFreq (map: word -> float)
-# - pmi (PairCounter: pair -> float)
-def processSentences(fileName):
+# - weightings dict: str -> PairMap. Keys are "TF", "TFIDF", "PMI"
+# - words list
+def processData(fileName, stoplist):
+
     # Build pairCount, docFreq
     pairCount = PairCounter()
     docFreq = {}
@@ -72,6 +95,8 @@ def processSentences(fileName):
     numDocs = 0
     numWords = 0 # Sum of all occurrences of all words
     wordCounts = {}
+
+    # Process each document
     file = open(fileName, 'r')
     for line in file:
         numDocs += 1
@@ -81,16 +106,12 @@ def processSentences(fileName):
 
         # Analyze words
         words = line.split(" ")
+        words = processWords(words, stoplist)
+        numWords += len(words)
         wordsSeen = {}
         for i in range(len(words)):
 
             word = words[i]
-
-            # Ensure not in stoplist
-            if word in stoplist:
-                continue
-
-            numWords += 1
 
             # Add to word counts
             if word not in wordCounts:
@@ -111,12 +132,22 @@ def processSentences(fileName):
             if word not in docFreq:
                 docFreq[word] = 0
             docFreq[word] += 1
+    file.close()
+
+    # Print statistics
+    print("Unique Words: " + str(len(wordCounts)))
+    print("Word Occurrences: " + str(numWords))
+    print("Sentences: " + str(numDocs))
 
     # Calculate inverse document frequency
-    invDocFreq = {}
-    for word in docFreq:
-        invDocFreq[word] = math.log(numDocs / docFreq[word])
-    print(invDocFreq)
+    # wordA is the main word, so we weight by doc freq of second word
+    invDocFreq = PairMap()
+    for wordA in docFreq:
+        for wordB in docFreq:
+            tf = pairCount.get(wordA, wordB)
+            idf = math.log(numDocs / docFreq[wordB]) / math.log(10.0)
+            tfIdf = tf * idf
+            invDocFreq.put(wordA, wordB, tfIdf)
 
     # Calculate Pointwise Mutual Information
     pmi = PairCounter()
@@ -127,15 +158,76 @@ def processSentences(fileName):
             wordB = words[j]
             curPmi = 1.0 * pairCount.get(wordA, wordB) * numWords
             curPmi /= wordCounts[wordA] * wordCounts[wordB]
-            print(curPmi)
-            curPmi = math.log(curPmi)
+            if curPmi != 0: # Only take the log if it is not 0
+                curPmi = math.log(curPmi)
             pmi.put(wordA, wordB, curPmi)
-    print(pmi.map)
+
+    weightings = {}
+    weightings["TF"] = pairCount
+    weightings["TFIDF"] = invDocFreq
+    weightings["PMI"] = pmi
+    wordList = wordCounts.keys()
+    return weightings, wordList
+
+def makeWordVector(word, words, weightDict):
+    vector = []
+    for wordB in words:
+        vector.append(weightDict.get(word, wordB))
+    return vector
+
+# TODO: add more than euclidian
+def getDist(vecA, vecB, similiarityMeasure):
+    sum = 0.0
+    for i in range(len(vecA)):
+        sum += (vecA[i] + vecB[i]) ** 2
+    return sum ** 0.5
+
+def getMostSimilarWords(word, words, weightDict, similiarityMeasure):
+
+    queue = []
+
+    vecA = makeWordVector(word, words, weightDict)
+    for candidate in words:
+        if candidate != word:
+            vecB = makeWordVector(candidate, words, weightDict)
+            dist = getDist(vecA, vecB, similiarityMeasure)
+            heapq.heappush(queue, (dist, candidate))
+
+    similarWords = {}
+    top = min(10, len(queue)) # Top 10 items from queue
+    for i in range(top):
+        similarity, word = heapq.heappop(queue)
+        similarWords[word] = similarity
+
+    return similarWords
+
+def processInputs(inputFile, weightings, wordsList):
+
+    file = open(inputFile, 'r')
+    for line in file:
+
+        # Remove newline character
+        line = line[:-1]
+
+        words = line.split(" ")
+        word = words[0]
+        weighting = words[1]
+        similiarityMeasure = words[2]
+
+        # Return dict: word -> score'
+        weightDict = weightings[weighting]
+        similarWords = getMostSimilarWords(word, wordsList, weightDict, similiarityMeasure)
+        print("\n" + " ".join(["SIM:", word, weighting, similiarityMeasure]))
+        for similarWord in similarWords:
+            print(" ".join([similarWord, str(similarWords[similarWord])]))
+
+    file.close()
 
 args = sys.argv
 stoplistFile = args[1]
 sentencesFile = args[2] # Training data
 inputFile = args[3] # Queries about word similarity
 
-makeStoplist(stoplistFile)
-processSentences(sentencesFile)
+stoplist = makeStoplist(stoplistFile)
+weightings, words = processData(sentencesFile, stoplist)
+processInputs(inputFile, weightings, words)
