@@ -3,8 +3,7 @@ import sys
 import heapq
 
 # TODO:
-# 1. Fix PMI to handle 0 case
-# 2. Encapsulate makeStopList() and processSentences() into class called WordSimilarity
+# 1. Debug cosine distance on smaller handmade example 
 
 class PairMap:
 
@@ -25,7 +24,6 @@ class PairMap:
         if wordB not in self.map[wordA]:
             return 0
         return self.map[wordA][wordB]
-
 
 # Maps (wordA, wordB) -> val
 # Ignores the ordering of the pair
@@ -55,6 +53,7 @@ class PairCounter(PairMap):
         cur = self.get(wordA, wordB)
         self.put(wordA, wordB, cur + 1)
 
+
 # Returns stoplist as set {wordA: 1, wordB: 1, ...}
 def makeStoplist(stoplistFile):
 
@@ -71,9 +70,11 @@ def makeStoplist(stoplistFile):
 
     return stoplist
 
+
 # 1. Remove words with non-alphabetic chars
 # 2. Lowercase all
 # 3. Remove words from stoplist
+# Returns: filtered set of words
 def processWords(words, stoplist):
     newWords = []
     for word in words:
@@ -84,9 +85,9 @@ def processWords(words, stoplist):
     return newWords
 
 # Returns:
-# - weightings dict: str -> PairMap. Keys are "TF", "TFIDF", "PMI"
-# - words list
-def processData(fileName, stoplist):
+# - weightings (dict: str -> PairMap. Keys are "TF", "TFIDF", "PMI")
+# - word counts (dict)
+def processData(fileName, stoplist, inputWords):
 
     # Build pairCount, docFreq
     pairCount = PairCounter()
@@ -142,7 +143,7 @@ def processData(fileName, stoplist):
     # Calculate inverse document frequency
     # wordA is the main word, so we weight by doc freq of second word
     invDocFreq = PairMap()
-    for wordA in docFreq:
+    for wordA in inputWords:
         for wordB in docFreq:
             tf = pairCount.get(wordA, wordB)
             idf = math.log(numDocs / docFreq[wordB]) / math.log(10.0)
@@ -152,10 +153,8 @@ def processData(fileName, stoplist):
     # Calculate Pointwise Mutual Information
     pmi = PairCounter()
     words = list(wordCounts.keys())
-    for i in range(len(words)):
-        for j in range(i, len(words)):
-            wordA = words[i]
-            wordB = words[j]
+    for wordA in inputWords:
+        for wordB in words:
             curPmi = 1.0 * pairCount.get(wordA, wordB) * numWords
             curPmi /= wordCounts[wordA] * wordCounts[wordB]
             if curPmi != 0: # Only take the log if it is not 0
@@ -166,42 +165,77 @@ def processData(fileName, stoplist):
     weightings["TF"] = pairCount
     weightings["TFIDF"] = invDocFreq
     weightings["PMI"] = pmi
-    wordList = wordCounts.keys()
-    return weightings, wordList
+    return weightings, wordCounts
 
-def makeWordVector(word, words, weightDict):
-    vector = []
-    for wordB in words:
-        vector.append(weightDict.get(word, wordB))
-    return vector
 
-# TODO: add more than euclidian
-def getDist(vecA, vecB, similiarityMeasure):
+# Euclidean length of a vector
+def getLength(vec):
     sum = 0.0
-    for i in range(len(vecA)):
-        sum += (vecA[i] + vecB[i]) ** 2
+    for v in vec:
+        sum += v ** 2
     return sum ** 0.5
 
-def getMostSimilarWords(word, words, weightDict, similiarityMeasure):
+# Normalizes a vector. Mutates, no return
+def normalize(vec):
+    l = getLength(vec)
+    if l > 0.0:
+        for i in range(len(vec)):
+            vec[i] = vec[i] / l
+
+# Computes distance between two vectors
+# similarityMeasure is one of: "L1", "EUCLIDEAN", "COSINE"
+def getDist(vecA, vecB, similarityMeasure):
+    normalize(vecA)
+    normalize(vecB)
+    if similarityMeasure == "L1":
+        dist = 0.0
+        for i in range(len(vecA)):
+            dist += abs(vecA[i] - vecB[i])
+    elif similarityMeasure == "EUCLIDEAN":
+        diff = []
+        for i in range(len(vecA)):
+            diff.append(vecA[i] - vecB[i])
+        dist = getLength(diff)
+    else: # COSINE
+        dist = 0.0
+        for i in range(len(vecA)):
+            dist += vecA[i] * vecB[i]
+    return dist
+
+# Generate the bag-of-words vector corresponding to a given word
+# weightDict: pre-computer weights of each pair of words
+def makeWordVector(word, wordCounts, weightDict):
+    vector = []
+    for wordB in wordCounts:
+        val = weightDict.get(word, wordB)
+        vector.append(val)
+    return vector
+
+# Given: a word, all words, pairwise weight function, and distance measure
+# Returns: top 10 most similar words, as a list of (word, similarity) tuples
+def getMostSimilarWords(word, wordCounts, weightDict, similiarityMeasure):
 
     queue = []
 
-    vecA = makeWordVector(word, words, weightDict)
-    for candidate in words:
-        if candidate != word:
-            vecB = makeWordVector(candidate, words, weightDict)
+    vecA = makeWordVector(word, wordCounts, weightDict)
+    for candidate in ["copper"]: # TODO loop thru wordCounts
+        # Candidate must not be same word, and must have occurred at least 3 times
+        if candidate != word and wordCounts[candidate] >= 3:
+            vecB = makeWordVector(candidate, wordCounts, weightDict)
             dist = getDist(vecA, vecB, similiarityMeasure)
-            heapq.heappush(queue, (dist, candidate))
+            heapq.heappush(queue, (-1 * dist, candidate))
 
-    similarWords = {}
+    similarWords = []
     top = min(10, len(queue)) # Top 10 items from queue
     for i in range(top):
         similarity, word = heapq.heappop(queue)
-        similarWords[word] = similarity
+        similarWords.append((word, -1 * similarity))
 
     return similarWords
 
-def processInputs(inputFile, weightings, wordsList):
+
+# Read each line from input file. Prints most similar words for each line
+def processInputs(inputFile, weightings, wordCounts):
 
     file = open(inputFile, 'r')
     for line in file:
@@ -209,25 +243,50 @@ def processInputs(inputFile, weightings, wordsList):
         # Remove newline character
         line = line[:-1]
 
-        words = line.split(" ")
+        words = line.split()
         word = words[0]
         weighting = words[1]
         similiarityMeasure = words[2]
 
         # Return dict: word -> score'
         weightDict = weightings[weighting]
-        similarWords = getMostSimilarWords(word, wordsList, weightDict, similiarityMeasure)
+        similarWords = getMostSimilarWords(word, wordCounts, weightDict, similiarityMeasure)
         print("\n" + " ".join(["SIM:", word, weighting, similiarityMeasure]))
-        for similarWord in similarWords:
-            print(" ".join([similarWord, str(similarWords[similarWord])]))
+        for similarWord, similarity in similarWords:
+            print(similarWord + " " + str(similarity))
 
     file.close()
 
-args = sys.argv
-stoplistFile = args[1]
-sentencesFile = args[2] # Training data
-inputFile = args[3] # Queries about word similarity
 
-stoplist = makeStoplist(stoplistFile)
-weightings, words = processData(sentencesFile, stoplist)
-processInputs(inputFile, weightings, words)
+# Return dict of words that user will ask for
+def getInputWords(inputFile):
+
+    file = open(inputFile, 'r')
+    inputWords = {}
+    for line in file:
+
+        # Remove newline character
+        line = line[:-1]
+
+        words = line.split()
+        word = words[0]
+        inputWords[word] = 1
+
+    file.close()
+    return inputWords
+
+
+# Main routine: process stoplist, data, and handle input queries
+def main():
+    args = sys.argv
+    stoplistFile = args[1]
+    sentencesFile = args[2] # Training data
+    inputFile = args[3] # Queries about word similarity
+
+    stoplist = makeStoplist(stoplistFile)
+    inputWords = getInputWords(inputFile)
+    weightings, wordCounts = processData(sentencesFile, stoplist, inputWords)
+    processInputs(inputFile, weightings, wordCounts)
+
+if __name__ == "__main__":
+    main()
