@@ -2,9 +2,7 @@ import math
 import sys
 import heapq
 
-# TODO:
-# 1. Debug cosine distance on smaller handmade example
-
+# 2D hashmap, with automatic key-checking
 class PairMap:
 
     def __init__(self):
@@ -30,8 +28,8 @@ class PairMap:
         return self.map[wordA]
 
 # Maps (wordA, wordB) -> val
-# Ignores the ordering of the pair
-class PairCounter(PairMap):
+# Ensures that pair has same value no matter order: get(a,b) = get(b,a)
+class SymPairMap(PairMap):
 
     def __init__(self, words = []):
         # Create empty map
@@ -39,25 +37,15 @@ class PairCounter(PairMap):
         for word in words:
             self.map[word] = {}
 
-    # Returns sorted pair: (small, large)
-    def __sortPair(self, eltA, eltB):
-        if eltA < eltB:
-            return eltA, eltB
-        return eltB, eltA
-
     def put(self, wordA, wordB, val):
-        wordA, wordB = self.__sortPair(wordA, wordB)
         PairMap.put(self, wordA, wordB, val)
         PairMap.put(self, wordB, wordA, val)
 
-    def get(self, wordA, wordB):
-        wordA, wordB = self.__sortPair(wordA, wordB)
-        return PairMap.get(self, wordA, wordB)
-
     def increment(self, wordA, wordB):
         cur = self.get(wordA, wordB)
-        self.put(wordA, wordB, cur + 1.0)
-        self.put(wordB, wordA, cur + 1.0)
+        next = cur + 1.0
+        self.put(wordA, wordB, next)
+        self.put(wordB, wordA, next)
 
 
 # Returns stoplist as set {wordA: 1, wordB: 1, ...}
@@ -84,8 +72,8 @@ def makeStoplist(stoplistFile):
 def processWords(words, stoplist):
     newWords = []
     for word in words:
+        word = word.lower()
         if word.isalpha():
-            word = word.lower()
             if word not in stoplist:
                 newWords.append(word)
     return newWords
@@ -96,7 +84,7 @@ def processWords(words, stoplist):
 def processData(fileName, stoplist):
 
     # Build pairCount, docFreq
-    pairCount = PairCounter()
+    pairCount = SymPairMap()
     docFreq = {}
     # Extra things to keep track of
     numDocs = 0.0
@@ -112,7 +100,7 @@ def processData(fileName, stoplist):
         line = line[:-1]
 
         # Analyze words
-        words = line.split(" ")
+        words = line.split()
         words = processWords(words, stoplist)
         numWords += len(words)
         wordsSeen = {}
@@ -162,14 +150,14 @@ def processData(fileName, stoplist):
             invDocFreq.put(wordA, wordB, tfIdf)
 
     # Calculate Pointwise Mutual Information
-    pmi = PairCounter()
+    pmi = SymPairMap()
     words = list(wordCounts.keys())
     for wordA in wordCounts:
         wordBList = pairCount.getPairedElts(wordA)
         for wordB in wordBList:
             curPmi = 1.0 * wordBList[wordB] * numWords
             curPmi /= wordCounts[wordA] * wordCounts[wordB]
-            curPmi = math.log(curPmi)
+            curPmi = math.log(curPmi) / math.log(10.0)
             pmi.put(wordA, wordB, curPmi)
 
     weightings = {}
@@ -212,7 +200,7 @@ def getDist(vecA, vecB, similarityMeasure):
             absDiff.append(abs([vecA[k]]))
     for k in vecB.keys():
         if k not in vecA.keys(): # B only
-            absDiff.append(vecB[k])
+            absDiff.append(abs(vecB[k]))
 
     if similarityMeasure == "L1":
         return sum(absDiff)
@@ -243,13 +231,15 @@ def getMostSimilarWords(word, wordCounts, weightDict, similiarityMeasure):
             vecB = makeWordVector(candidate, wordCounts, weightDict)
             normalize(vecB)
             dist = getDist(vecA, vecB, similiarityMeasure)
-            heapq.heappush(queue, (-1 * dist, candidate))
+            qDist = 1 - dist # Make sure best values are small
+            heapq.heappush(queue, (qDist, candidate))
 
     similarWords = []
     top = min(10, len(queue)) # Top 10 items from queue
     for i in range(top):
-        similarity, word = heapq.heappop(queue)
-        similarWords.append((word, -1 * similarity))
+        qDist, word = heapq.heappop(queue)
+        dist = 1 - qDist
+        similarWords.append((word, dist))
 
     return similarWords
 
