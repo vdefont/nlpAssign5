@@ -94,7 +94,7 @@ def processData(fileName, stoplist):
     # Process each document
     file = open(fileName, 'r')
     for line in file:
-        numDocs += 1
+        numDocs += 1.0
 
         # Remove newline character
         line = line[:-1]
@@ -110,7 +110,7 @@ def processData(fileName, stoplist):
 
             # Add to word counts
             if word not in wordCounts:
-                wordCounts[word] = 0
+                wordCounts[word] = 0.0
             wordCounts[word] += 1
 
             # Mark word as seen
@@ -125,8 +125,8 @@ def processData(fileName, stoplist):
         # Update docFreq
         for word in wordsSeen:
             if word not in docFreq:
-                docFreq[word] = 0
-            docFreq[word] += 1
+                docFreq[word] = 0.0
+            docFreq[word] += 1.0
     file.close()
 
     # Print statistics
@@ -155,10 +155,11 @@ def processData(fileName, stoplist):
     for wordA in wordCounts:
         wordBList = pairCount.getPairedElts(wordA)
         for wordB in wordBList:
-            curPmi = 1.0 * wordBList[wordB] * numWords
-            curPmi /= wordCounts[wordA] * wordCounts[wordB]
-            curPmi = math.log(curPmi) / math.log(10.0)
-            pmi.put(wordA, wordB, curPmi)
+            if wordB >= wordA: # Don't do doube the work
+                curPmi = 1.0 * wordBList[wordB] * numWords
+                curPmi /= wordCounts[wordA] * wordCounts[wordB]
+                curPmi = math.log(curPmi) / math.log(10.0)
+                pmi.put(wordA, wordB, curPmi)
 
     weightings = {}
     weightings["TF"] = pairCount
@@ -183,14 +184,15 @@ def normalize(vec):
 
 # Computes distance between two vectors
 # similarityMeasure is one of: "L1", "EUCLIDEAN", "COSINE"
-def getDist(vecA, vecB, similarityMeasure):
+# smaller values means more similar
+def getSimilarity(vecA, vecB, similarityMeasure):
 
     if similarityMeasure == "COSINE":
-        dist = 0.0
+        sim = 0.0
         for k in vecA.keys():
             if k in vecB.keys():
                 dist += vecA[k] * vecB[k]
-        return dist
+        return -1 * sim
 
     absDiff = []
     for k in vecA.keys():
@@ -230,16 +232,14 @@ def getMostSimilarWords(word, wordCounts, weightDict, similiarityMeasure):
         if candidate != word and wordCounts[candidate] >= 3:
             vecB = makeWordVector(candidate, wordCounts, weightDict)
             normalize(vecB)
-            dist = getDist(vecA, vecB, similiarityMeasure)
-            qDist = 1 - dist # Make sure best values are small
-            heapq.heappush(queue, (qDist, candidate))
+            sim = getSimilarity(vecA, vecB, similiarityMeasure)
+            heapq.heappush(queue, (sim, candidate))
 
     similarWords = []
     top = min(10, len(queue)) # Top 10 items from queue
     for i in range(top):
-        qDist, word = heapq.heappop(queue)
-        dist = 1 - qDist
-        similarWords.append((word, dist))
+        sim, word = heapq.heappop(queue)
+        similarWords.append((word, abs(sim)))
 
     return similarWords
 
