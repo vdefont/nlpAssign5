@@ -2,7 +2,6 @@ import math
 import sys
 import heapq
 
-# TODO: Check PMI vecs for breeds and terrier 
 
 # 2D hashmap, with automatic key-checking
 class PairMap:
@@ -45,9 +44,17 @@ class SymPairMap(PairMap):
 
     def increment(self, wordA, wordB):
         cur = self.get(wordA, wordB)
-        next = cur + 1.0
+        # If the words are the same, increment twice
+        if wordA == wordB:
+            next = cur + 2.0
+        else:
+            next = cur + 1.0
         self.put(wordA, wordB, next)
         self.put(wordB, wordA, next)
+
+
+def log10(x):
+    return math.log(x) / math.log(10)
 
 
 # Returns stoplist as set {wordA: 1, wordB: 1, ...}
@@ -139,7 +146,7 @@ def processData(fileName, stoplist):
     # Calculate inverse document frequencies
     idfDict = {}
     for word in wordCounts:
-        idf = math.log(numDocs / docFreq[word]) / math.log(10.0)
+        idf = log10(numDocs / docFreq[word])
         idfDict[word] = idf
     invDocFreq = PairMap()
     # Calculate weight for all pairs
@@ -160,7 +167,7 @@ def processData(fileName, stoplist):
             if wordB >= wordA: # Don't do doube the work
                 curPmi = 1.0 * wordBList[wordB] * numWords
                 curPmi /= wordCounts[wordA] * wordCounts[wordB]
-                curPmi = math.log(curPmi) / math.log(10.0)
+                curPmi = log10(curPmi)
                 pmi.put(wordA, wordB, curPmi)
 
     weightings = {}
@@ -280,6 +287,7 @@ def main():
     stoplist = makeStoplist(stoplistFile)
     weightings, wordCounts = processData(sentencesFile, stoplist)
     processInputs(inputFile, weightings, wordCounts)
+
 
 if __name__ == "__main__":
     main()
