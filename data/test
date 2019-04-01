@@ -1,2 +1,2 @@
-terrier TFIDF COSINE
+terrier PMI COSINE
 dog	PMI	COSINE

@@ -180,7 +180,7 @@ def normalize(vec):
     l = getLength(vec.values())
     if l > 0.0:
         for word in vec:
-            vec[word] = vec[word] / l
+            vec[word] = 1.0 * vec[word] / l
 
 # Computes distance between two vectors
 # similarityMeasure is one of: "L1", "EUCLIDEAN", "COSINE"
@@ -191,7 +191,7 @@ def getSimilarity(vecA, vecB, similarityMeasure):
         sim = 0.0
         for k in vecA.keys():
             if k in vecB.keys():
-                dist += vecA[k] * vecB[k]
+                sim += vecA[k] * vecB[k]
         return -1 * sim
 
     absDiff = []
