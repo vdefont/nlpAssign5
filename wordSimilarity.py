@@ -2,6 +2,8 @@ import math
 import sys
 import heapq
 
+# TODO: Check PMI vecs for breeds and terrier 
+
 # 2D hashmap, with automatic key-checking
 class PairMap:
 
