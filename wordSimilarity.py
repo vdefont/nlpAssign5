@@ -52,7 +52,7 @@ class SymPairMap(PairMap):
         self.put(wordA, wordB, next)
         self.put(wordB, wordA, next)
 
-
+# Returns the base 10 log of a number
 def log10(x):
     return math.log(x) / math.log(10)
 
@@ -148,6 +148,7 @@ def processData(fileName, stoplist):
     for word in wordCounts:
         idf = log10(numDocs / docFreq[word])
         idfDict[word] = idf
+
     invDocFreq = PairMap()
     # Calculate weight for all pairs
     for wordA in wordCounts:
@@ -208,7 +209,7 @@ def getSimilarity(vecA, vecB, similarityMeasure):
         if k in vecB.keys(): # Both
             absDiff.append(abs(vecA[k] - vecB[k]))
         else: # A only
-            absDiff.append(abs([vecA[k]]))
+            absDiff.append(abs(vecA[k]))
     for k in vecB.keys():
         if k not in vecA.keys(): # B only
             absDiff.append(abs(vecB[k]))
@@ -287,6 +288,7 @@ def main():
     stoplist = makeStoplist(stoplistFile)
     weightings, wordCounts = processData(sentencesFile, stoplist)
     processInputs(inputFile, weightings, wordCounts)
+
 
 
 if __name__ == "__main__":
